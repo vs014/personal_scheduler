@@ -148,3 +148,5 @@ npm run test:e2e
 작업 링크와 진행 상태를 표시하고 중복 전송을 막습니다. Windows ZIP에 CLI 0.164.0을 포함합니다.
 대상 저장소 `vs014/personal_scheduler`, 개발 브랜치 `codex/feedback-delivery`를 사용합니다.
 실계정 작업 생성은 사용자 로그인 후 검증해야 하며 앱 자동 업데이트나 기존 Codex 대화에 메시지 추가 기능은 아닙니다.
+
+Windows Light 배포본은 초기 다운로드를 약 18MB로 줄이고 첫 실행에 검증된 공식 Codex 구성 요소를 내려받습니다. 제작: `python3 scripts/package_windows.py /path/to/Yeobaek-Windows-v0.2.5-Light.zip --light`.

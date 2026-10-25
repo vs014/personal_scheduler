@@ -80,12 +80,13 @@ uv가 설치하는 Python과 pyproject.toml/uv.lock에 명시된 앱 의존성.
 """
 
 
-def build(destination: Path):
+def build(destination: Path, light: bool = False):
     if not (ROOT / "web/dist/index.html").is_file():
         raise SystemExit("Run npm run build first")
     destination.parent.mkdir(parents=True, exist_ok=True)
     manifest = {"app_version": "0.2.5", "uv_version": UV_VERSION, "artifacts": {"codex": {"version":CODEX_VERSION,"url":CODEX_URL,"sha512":CODEX_SHA512}}}
-    codex_tarball = codex_archive()
+    manifest["distribution"] = "light" if light else "full"
+    codex_tarball = None if light else codex_archive()
     bundled = {}
     for arch, (target, expected) in ARTIFACTS.items():
         name = f"uv-{target}.zip"
@@ -108,21 +109,28 @@ def build(destination: Path):
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as out:
         for path in sorted(sources):
             out.write(path, f"Yeobaek-Windows/{path.relative_to(ROOT).as_posix()}")
-        script = (ROOT / "scripts/windows-start.cmd").read_text().replace("\n", "\r\n")
+        script = (ROOT / "scripts/windows-start.cmd").read_text()
+        if light:
+            marker = r'"%UV_PROJECT_ENVIRONMENT%\Scripts\python.exe" -m backend.desktop'
+            bootstrap = r'"%UV_PROJECT_ENVIRONMENT%\Scripts\python.exe" -m backend.install_codex' + '\nif errorlevel 1 goto failed\n' + r'set "SCHEDULER_CODEX_BINARY=%LOCALAPPDATA%\Yeobaek\runtime\codex-0.164.0\bin\codex.exe"' + '\n'
+            assert marker in script
+            script = script.replace(marker, bootstrap + marker)
+        script = script.replace("\n", "\r\n")
         out.writestr("Yeobaek-Windows/START-Yeobaek.cmd", script.encode("ascii"))
-        out.writestr("Yeobaek-Windows/먼저-읽어주세요.txt", INSTRUCTIONS.encode("utf-8-sig"))
+        out.writestr("Yeobaek-Windows/먼저-읽어주세요.txt", (("작은 배포본: 첫 실행 때 공식 Codex 구성 요소 약 173MB를 추가로 내려받고 검증합니다. 다음 실행에서는 재사용합니다.\n\n" if light else "") + INSTRUCTIONS).encode("utf-8-sig"))
         for name, content in bundled.items():
             out.writestr(f"Yeobaek-Windows/{name}", content)
-        prefix = "package/vendor/x86_64-pc-windows-msvc/"
-        with tarfile.open(codex_tarball, "r:gz") as archive:
-            for member in archive.getmembers():
-                if not member.isfile() or not member.name.startswith(prefix):
-                    continue
-                rel = member.name[len(prefix):]
-                if ".." in Path(rel).parts or Path(rel).is_absolute():
-                    raise SystemExit("Unsafe Codex archive member")
-                with archive.extractfile(member) as source, out.open("Yeobaek-Windows/tools/codex/" + rel, "w", force_zip64=True) as target:
-                    shutil.copyfileobj(source, target)
+        if not light:
+            prefix = "package/vendor/x86_64-pc-windows-msvc/"
+            with tarfile.open(codex_tarball, "r:gz") as archive:
+                for member in archive.getmembers():
+                    if not member.isfile() or not member.name.startswith(prefix):
+                        continue
+                    rel = member.name[len(prefix):]
+                    if ".." in Path(rel).parts or Path(rel).is_absolute():
+                        raise SystemExit("Unsafe Codex archive member")
+                    with archive.extractfile(member) as source, out.open("Yeobaek-Windows/tools/codex/" + rel, "w", force_zip64=True) as target:
+                        shutil.copyfileobj(source, target)
         with urllib.request.urlopen("https://raw.githubusercontent.com/openai/codex/rust-v0.164.0/LICENSE", timeout=30) as response:
             out.writestr("Yeobaek-Windows/tools/codex/LICENSE", response.read())
         out.writestr("Yeobaek-Windows/download-manifest.json", json.dumps(manifest, indent=2))
@@ -137,4 +145,6 @@ def build(destination: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("destination", type=Path)
-    build(parser.parse_args().destination)
+    parser.add_argument("--light", action="store_true", help="Download verified Codex components on first Windows launch")
+    args = parser.parse_args()
+    build(args.destination, args.light)
