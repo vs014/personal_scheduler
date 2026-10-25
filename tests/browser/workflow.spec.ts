@@ -353,59 +353,156 @@ test("AI 연결 진단 실패를 표시하고 재검사 성공을 로그인 성�
   await expect(page.getByText("AI 미연결 ·", { exact: false })).toBeVisible();
 });
 
-test("오늘 하기와 삭제를 되돌리고 분류를 수정한다", async ({page}) => {
-  await page.getByRole("button", {name:"받은함", exact:false}).first().click();
+test("오늘 하기와 삭제를 되돌리고 분류를 수정한다", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "받은함", exact: false })
+    .first()
+    .click();
   await page.getByLabel("빠르게 할 일 추가").fill("되돌리기 확인용");
-  await page.getByRole("button", {name:"추가", exact:true}).click();
-  const row=page.locator("article.task-row").filter({hasText:"되돌리기 확인용"});
-  await row.getByRole("button", {name:"오늘 하기", exact:true}).click();
-  await page.getByRole("button", {name:"되돌리기", exact:true}).click();
-  await expect(row.getByRole("button", {name:"오늘 하기", exact:true})).toBeVisible();
+  await page.getByRole("button", { name: "추가", exact: true }).click();
+  const row = page
+    .locator("article.task-row")
+    .filter({ hasText: "되돌리기 확인용" });
+  await row.getByRole("button", { name: "오늘 하기", exact: true }).click();
+  await page.getByRole("button", { name: "되돌리기", exact: true }).click();
+  await expect(
+    row.getByRole("button", { name: "오늘 하기", exact: true }),
+  ).toBeVisible();
   await row.locator(".task-main").click();
-  await page.getByLabel("분류", {exact:true}).selectOption("구매");
-  await page.getByRole("button", {name:"저장", exact:true}).click();
-  await expect(page.getByRole("heading", {name:"구매 · 1", exact:true})).toBeVisible();
+  await page.getByLabel("분류", { exact: true }).selectOption("구매");
+  await page.getByRole("button", { name: "저장", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "구매 · 1", exact: true }),
+  ).toBeVisible();
   await row.locator(".task-main").click();
-  await page.getByRole("button", {name:"삭제", exact:true}).click();
-  await page.getByRole("button", {name:"삭제 확인", exact:true}).click();
+  await page.getByRole("button", { name: "삭제", exact: true }).click();
+  await page.getByRole("button", { name: "삭제 확인", exact: true }).click();
   await expect(row).toHaveCount(0);
-  await page.getByRole("button", {name:"되돌리기", exact:true}).click();
+  await page.getByRole("button", { name: "되돌리기", exact: true }).click();
   await expect(row).toBeVisible();
 });
 
-test("피드백 전체 선택·해제와 확인 후 복사를 지원한다", async ({page}) => {
-  await page.getByRole("button", {name:"개선 기록", exact:true}).click();
-  await page.getByRole("button", {name:"현재 목록 전체 선택"}).click();
-  const boxes=page.locator('.feedback-row input[type="checkbox"]');
+test("피드백 전체 선택·해제와 확인 후 복사를 지원한다", async ({ page }) => {
+  await page.getByRole("button", { name: "개선 기록", exact: true }).click();
+  await page.getByRole("button", { name: "현재 목록 전체 선택" }).click();
+  const boxes = page.locator('.feedback-row input[type="checkbox"]');
   expect(await boxes.count()).toBeGreaterThan(0);
-  for(const box of await boxes.all()) await expect(box).toBeChecked();
-  await page.getByRole("button", {name:"전체 해제",exact:true}).click();
-  for(const box of await boxes.all()) await expect(box).not.toBeChecked();
-  await page.getByRole("button", {name:"현재 목록 전체 선택"}).click();
-  await page.getByRole("button", {name:/전달 파일/}).click();
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {value:{writeText:async (text:string) => { (window as unknown as {copied:string}).copied=text; }},configurable:true}));
-  await page.getByRole("button", {name:"개발 AI에 보낼 내용 복사"}).click();
-  await expect(page.getByRole("status")).toContainText("아직 전달되지는 않았습니다");
-  expect(await page.evaluate(() => (window as unknown as {copied:string}).copied)).toContain('personal-scheduler-feedback/v1');
+  for (const box of await boxes.all()) await expect(box).toBeChecked();
+  await page.getByRole("button", { name: "전체 해제", exact: true }).click();
+  for (const box of await boxes.all()) await expect(box).not.toBeChecked();
+  await page.getByRole("button", { name: "현재 목록 전체 선택" }).click();
+  await page.getByRole("button", { name: /전달 파일/ }).click();
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { copied: string }).copied = text;
+        },
+      },
+      configurable: true,
+    }),
+  );
+  await page.getByRole("button", { name: "개발 AI에 보낼 내용 복사" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "아직 전달되지는 않았습니다",
+  );
+  expect(
+    await page.evaluate(() => (window as unknown as { copied: string }).copied),
+  ).toContain("personal-scheduler-feedback/v1");
 });
 
-test("선택한 피드백을 확인한 뒤 Codex 작업으로 보내고 중복을 막는다 (CLI 모의)", async ({page}) => {
-  await page.getByRole("button", {name:"개선 기록",exact:true}).click();
+test("선택한 피드백을 확인한 뒤 Codex 작업으로 보내고 중복을 막는다 (CLI 모의)", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "개선 기록", exact: true }).click();
   await page.getByLabel("Codex 환경 이름 또는 ID").fill("scheduler-test");
-  await page.getByRole("button", {name:"연결 설정 저장",exact:true}).click();
-  await page.getByRole("button", {name:"Codex 연결 확인",exact:true}).click();
-  await expect(page.getByText("Codex 로그인과 환경 접근을 확인했습니다.",{exact:false})).toBeVisible();
-  await page.getByRole("button", {name:"현재 목록 전체 선택"}).click();
-  await page.getByRole("button", {name:/선택한 피드백 보내기 전 확인/}).click();
-  const modal=page.getByRole("dialog",{name:"Codex 전송 내용 확인"});
+  await page
+    .getByRole("button", { name: "연결 설정 저장", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Codex 연결 확인", exact: true })
+    .click();
+  await expect(
+    page.getByText("Codex 로그인과 환경 접근을 확인했습니다.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "현재 목록 전체 선택" }).click();
+  await page
+    .getByRole("button", { name: /선택한 피드백 보내기 전 확인/ })
+    .click();
+  const modal = page.getByRole("dialog", { name: "Codex 전송 내용 확인" });
   await expect(modal).toBeVisible();
-  expect((await (await page.request.get('/test/codex-creates')).json()).count).toBe(0);
-  await modal.getByRole('button',{name:'확인한 피드백 Codex로 보내기'}).click();
+  expect(
+    (await (await page.request.get("/test/codex-creates")).json()).count,
+  ).toBe(0);
+  await modal
+    .getByRole("button", { name: "확인한 피드백 Codex로 보내기" })
+    .click();
   await expect(modal).not.toBeVisible();
-  await expect(page.getByRole('link',{name:'Codex 작업 열기'})).toHaveAttribute('href','https://chatgpt.com/codex/tasks/task_browser_test',{timeout:15000});
-  await page.getByRole('button',{name:'작업 상태 확인',exact:true}).click();
-  await expect(page.getByText('건 · 검토 완료',{exact:false})).toBeVisible();
-  await page.getByRole("button", {name:/선택한 피드백 보내기 전 확인/}).click();
-  await expect(modal.getByRole('button',{name:'확인한 피드백 Codex로 보내기'})).toBeDisabled();
-  expect((await (await page.request.get('/test/codex-creates')).json()).count).toBe(1);
+  await expect(
+    page.getByRole("link", { name: "Codex 작업 열기" }),
+  ).toHaveAttribute(
+    "href",
+    "https://chatgpt.com/codex/tasks/task_browser_test",
+    { timeout: 15000 },
+  );
+  await page
+    .getByRole("button", { name: "작업 상태 확인", exact: true })
+    .click();
+  await expect(
+    page.getByText("건 · 검토 완료", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /선택한 피드백 보내기 전 확인/ })
+    .click();
+  await expect(
+    modal.getByRole("button", { name: "확인한 피드백 Codex로 보내기" }),
+  ).toBeDisabled();
+  expect(
+    (await (await page.request.get("/test/codex-creates")).json()).count,
+  ).toBe(1);
+});
+
+test("환경 이름 없이 로그인과 실제 작업의 환경을 확인하고 선택한다", async ({
+  page,
+}) => {
+  await page.route("**/api/codex/settings", async (route) => {
+    if (route.request().method() === "GET")
+      await route.fulfill({
+        json: { environment: "", branch: "codex/feedback-delivery" },
+      });
+    else await route.continue();
+  });
+  await page.route("**/api/codex/environments", (route) =>
+    route.fulfill({
+      json: {
+        ok: true,
+        message: "환경을 찾았습니다.",
+        environments: [{ id: "env_real", name: "personal_scheduler" }],
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "개선 기록", exact: true }).click();
+  await page
+    .getByRole("button", { name: "로그인 상태 확인", exact: true })
+    .click();
+  await expect(
+    page.getByText("Codex 로그인 확인됨.", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "최근 Codex 작업에서 환경 찾기" })
+    .click();
+  await page
+    .getByLabel("작업에서 확인된 환경", { exact: true })
+    .selectOption("env_real");
+  await expect(page.getByLabel("Codex 환경 이름 또는 ID")).toHaveValue(
+    "env_real",
+  );
+  await page
+    .getByRole("button", { name: "연결 설정 저장", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Codex 연결 확인", exact: true }),
+  ).toBeEnabled();
 });

@@ -17,6 +17,9 @@ export default function CodexDelivery({ selected }: { selected: string[] }) {
     branch: "codex/feedback-delivery",
   });
   const [saved, setSaved] = useState("");
+  const [environments, setEnvironments] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [preview, setPreview] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,6 +84,70 @@ export default function CodexDelivery({ selected }: { selected: string[] }) {
         >
           Codex 로그인 창 열기
         </button>
+        <div className="inline assistant-controls">
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() =>
+              action(async () => {
+                const r = await api<{ connected: boolean; message: string }>(
+                  "/codex/connection",
+                  "POST",
+                );
+                if (r.connected) setMessage(r.message);
+                else setError(r.message);
+              })
+            }
+          >
+            로그인 상태 확인
+          </button>
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() =>
+              action(async () => {
+                const r = await api<{
+                  ok: boolean;
+                  message: string;
+                  environments: { id: string; name: string }[];
+                }>("/codex/environments", "POST");
+                setEnvironments(r.environments);
+                if (r.ok) setMessage(r.message);
+                else setError(r.message);
+              })
+            }
+          >
+            최근 Codex 작업에서 환경 찾기
+          </button>
+        </div>
+        {environments.length > 0 && (
+          <label>
+            작업에서 확인된 환경
+            <select
+              aria-label="작업에서 확인된 환경"
+              value={
+                environments.some((e) => e.id === config.environment)
+                  ? config.environment
+                  : ""
+              }
+              onChange={(e) => {
+                if (e.target.value)
+                  setConfig({ ...config, environment: e.target.value });
+              }}
+            >
+              <option value="">이 프로젝트의 환경을 선택하세요</option>
+              {environments.map((e) => (
+                <option value={e.id} key={e.id}>
+                  {e.name} · {e.id}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <p className="small muted">
+          로그인 상태와 환경 접근은 별도로 확인합니다. 환경 찾기는 최근 작업
+          최대 100개의 환경을 보여주며, 모든 환경 목록을 보장하지는 않습니다.
+        </p>
         <div className="form-grid">
           <label>
             Codex 환경 이름 또는 ID

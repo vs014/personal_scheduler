@@ -37,6 +37,50 @@ def task_id(url):
     return match[1]
 
 
+class ConnectionFailure(Exception):
+    def __init__(self, code, message):
+        self.code, self.message = code, message
+        super().__init__(message)
+
+
+def cli_failure(result):
+    # Match known causes, never echo provider bodies, URLs, environment names,
+    # account identifiers or exception text into the UI.
+    text=(result.stdout+'\n'+result.stderr).lower()
+    if any(x in text for x in ('certificate verify failed','certificate_verify_failed','invalid peer certificate','unknownissuer','unable to get local issuer','certificate chain','unknown issuer')):
+        return ConnectionFailure('CODEX-TLS','Codex가 서버 인증서를 검증하지 못했습니다. Windows 날짜·시간과 인증서 설정을 확인해야 합니다. 검증은 끄지 마세요.')
+    if any(x in text for x in ('proxy authentication','tunnel connection failed','proxy connect')):
+        return ConnectionFailure('CODEX-PROXY','프록시 연결이 거부되었습니다. 사용하는 네트워크의 접근 정책을 확인해야 합니다.')
+    if 'no cloud environments are available' in text or 'no environments available' in text:
+        return ConnectionFailure('CODEX-NO-ENV','로그인한 계정·작업공간에서 사용할 수 있는 클라우드 환경을 찾지 못했습니다. 현재 개발에 사용하는 계정·작업공간과 같은지 확인하세요.')
+    if 'environment ' in text and 'not found' in text:
+        return ConnectionFailure('CODEX-ENV-NOT-FOUND','로그인한 계정에서 입력한 환경 이름/ID를 찾지 못했습니다. 아래 환경 찾기로 실제 작업의 환경을 선택하세요.')
+    if 'environment label' in text and 'ambiguous' in text:
+        return ConnectionFailure('CODEX-ENV-AMBIGUOUS','같은 이름의 환경이 여러 개입니다. 환경 찾기에서 해당 환경의 ID를 선택하세요.')
+    if '401' in text or 'not signed in' in text or 'refresh token' in text:
+        return ConnectionFailure('CODEX-AUTH','Codex 서버가 로그인을 확인하지 못했습니다. 현재 개발에 사용하는 ChatGPT 계정으로 다시 로그인하세요.')
+    if '403' in text or 'forbidden' in text:
+        return ConnectionFailure('CODEX-403','Codex 서버 또는 네트워크에서 접근을 거부했습니다. 계정·작업공간 권한이나 네트워크 차단을 확인해야 합니다. 환경 이름 오류로 단정할 수 없습니다.')
+    if '429' in text:
+        return ConnectionFailure('CODEX-429','Codex 요청 한도에 도달했습니다. 잠시 후 다시 확인하세요.')
+    if 'timed out' in text or 'timeout' in text:
+        return ConnectionFailure('CODEX-TIMEOUT','Codex 서버 응답 시간이 초과되었습니다. 잠시 후 다시 확인하세요.')
+    if any(x in text for x in ('dns error','failed to lookup','name resolution')):
+        return ConnectionFailure('CODEX-DNS','Codex 서버 주소를 찾지 못했습니다. 인터넷 연결과 DNS 설정을 확인하세요.')
+    if '<!doctype html' in text or '<html' in text:
+        return ConnectionFailure('CODEX-HTML','Codex에서 예상한 데이터 대신 웹 페이지를 받았습니다. 접근 차단 또는 서비스 응답 형식을 확인해야 합니다.')
+    return ConnectionFailure('CODEX-CLI','Codex 명령이 정상 응답을 반환하지 못했습니다. 이 단계와 진단 코드를 알려주세요.')
+
+
+def diagnostic(exc, stage):
+    if isinstance(exc,ConnectionFailure):code,message=exc.code,exc.message
+    elif isinstance(exc,subprocess.TimeoutExpired):code,message='CODEX-TIMEOUT','Codex 응답 시간이 초과되었습니다. 잠시 후 다시 확인하세요.'
+    elif isinstance(exc,HTTPException):code,message='CODEX-INSTALL','Codex 실행 파일을 확인하지 못했습니다. 실행 창에서 구성 요소 설치가 끝났는지 확인하세요.'
+    elif isinstance(exc,OSError):code,message='CODEX-START','Codex 실행 파일을 시작하지 못했습니다. 설치 상태와 Windows 실행 제한을 확인해야 합니다.'
+    else:code,message='CODEX-RESPONSE','Codex 응답을 해석하지 못했습니다. 이 단계와 진단 코드를 알려주세요.'
+    return {'ok':False,'code':code,'stage':stage,'message':f'[{code}] {stage}: {message}'}
+
+
 class Delivery:
     def __init__(self, store, version):
         self.store, self.version = store, version
@@ -83,10 +127,13 @@ class Delivery:
 
     def connection(self):
         try:
-            connected=self.connected()
-            return {'connected':connected,'message':'Codex 로그인 확인됨. 환경 연결 확인을 진행하세요.' if connected else 'Codex에 ChatGPT 계정으로 로그인해 주세요.'}
-        except Exception:
-            return {'connected':False,'message':'Codex 연결을 확인하지 못했습니다. 실행 파일과 로그인을 확인하세요.'}
+            result=self.run(['login','status'])
+            connected=result.returncode==0 and 'logged in using chatgpt' in (result.stdout+result.stderr).lower()
+            if not connected:
+                return {'connected':False,'message':'[CODEX-LOGIN] Codex에 현재 개발에 사용하는 ChatGPT 계정으로 로그인해 주세요.'}
+            return {'connected':True,'message':'Codex 로그인 확인됨. 다음으로 환경 접근을 확인하세요.'}
+        except Exception as exc:
+            return {'connected':False,**diagnostic(exc,'로그인 상태 확인')}
 
     def login(self):
         with self.login_lock:
@@ -98,23 +145,47 @@ class Delivery:
                                                  creationflags=subprocess.CREATE_NEW_CONSOLE, shell=False)
         return {'message':'Codex 로그인 창을 열었습니다. 로그인을 마친 뒤 연결 확인을 눌러 주세요.'}
 
-    def catalog(self, destination, cursor=None):
-        args=['cloud','list','--env',destination['environment'],'--limit','20','--json']
+    def catalog(self, destination=None, cursor=None):
+        args=['cloud','list','--limit','20','--json']
+        if destination:args+=['--env',destination['environment']]
         if cursor:args+=['--cursor',cursor]
         result=self.run(args)
-        if result.returncode:raise RuntimeError('cloud environment unavailable')
-        data=json.loads(result.stdout)
-        if not isinstance(data.get('tasks'),list):raise RuntimeError('unexpected catalog')
+        if result.returncode:raise cli_failure(result)
+        try:data=json.loads(result.stdout)
+        except ValueError:raise cli_failure(result) from None
+        if not isinstance(data,dict) or not isinstance(data.get('tasks'),list):
+            raise ConnectionFailure('CODEX-FORMAT','Codex 작업 목록의 응답 형식이 예상과 다릅니다. 기존 피드백은 유지됩니다.')
         return data
 
     def check(self):
+        stage='로그인 상태 확인'
         try:
-            if not self.connected():return {'ok':False,'message':'먼저 Codex에 ChatGPT 계정으로 로그인하세요.'}
+            if not self.connected():return {'ok':False,'message':'[CODEX-LOGIN] 먼저 현재 개발에 사용하는 ChatGPT 계정으로 Codex에 로그인하세요.'}
             config=Settings(**self.settings()).model_dump()
+            stage='환경 접근 확인 (로그인 확인됨)'
             self.catalog(config)
             return {'ok':True,'message':'Codex 로그인과 환경 접근을 확인했습니다. 대상 브랜치의 코드와 실제 전송은 별도 확인이 필요합니다.'}
-        except Exception:
-            return {'ok':False,'message':'환경 접근을 확인하지 못했습니다. Codex 환경 이름/ID, 계정 권한 및 인터넷 연결을 확인하세요.'}
+        except Exception as exc:
+            return diagnostic(exc,stage)
+
+    def discover(self):
+        stage='로그인 상태 확인'
+        try:
+            if not self.connected():raise ConnectionFailure('CODEX-LOGIN','먼저 현재 개발에 사용하는 ChatGPT 계정으로 Codex에 로그인하세요.')
+            stage='최근 작업에서 환경 찾기 (로그인 확인됨)'
+            choices={};cursor=None
+            for _ in range(5):
+                page=self.catalog(cursor=cursor)
+                for task in page['tasks']:
+                    if not isinstance(task,dict):continue
+                    id=task.get('environment_id');label=task.get('environment_label')
+                    if isinstance(id,str) and id and len(id)<=200 and re.fullmatch(r'\w[^\r\n\x00]*',id):
+                        choices[id]={'id':id,'name':label[:200] if isinstance(label,str) and label else id}
+                next_cursor=page.get('cursor')
+                if not isinstance(next_cursor,str) or not next_cursor or next_cursor==cursor:break
+                cursor=next_cursor
+            return {'ok':True,'environments':list(choices.values()),'message':'최근 Codex 작업에 연결된 환경입니다. 이 프로젝트의 환경을 선택하고 설정을 저장하세요.' if choices else '최근 Codex 작업에서 환경을 찾지 못했습니다. 환경 자체가 없다는 뜻은 아닙니다. 같은 계정·작업공간의 Codex 환경 설정을 확인하세요.'}
+        except Exception as exc:return {**diagnostic(exc,stage),'environments':[]}
 
     def preview(self, snapshot):
         destination=Settings(**self.settings()).model_dump()
@@ -236,6 +307,12 @@ def register(app, store, authenticated, export_feedback, version):
 
     @app.post('/api/codex/login',dependencies=auth)
     def login():return engine.login()
+
+    @app.post('/api/codex/connection',dependencies=auth)
+    def connection():return engine.connection()
+
+    @app.post('/api/codex/environments',dependencies=auth)
+    def environments():return engine.discover()
 
     @app.post('/api/codex/check',dependencies=auth)
     def check():return engine.check()

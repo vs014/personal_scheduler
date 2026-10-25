@@ -100,3 +100,52 @@ def test_payload_is_sent_via_stdin_and_no_shell_or_api_key(setup,monkeypatch,tmp
     assert '$(not-a-command)' not in seen['command']
     assert 'OPENAI_API_KEY' not in seen['env'] and 'CODEX_API_KEY' not in seen['env']
     assert 'forced_login_method="chatgpt"' in seen['command']
+
+
+@pytest.mark.parametrize('stderr,code',[
+ ("environment 'private-name' not found; run `codex cloud`",'CODEX-ENV-NOT-FOUND'),
+ ('no cloud environments are available for this workspace','CODEX-NO-ENV'),
+ ("environment label 'secret' is ambiguous",'CODEX-ENV-AMBIGUOUS'),
+ ('403 Forbidden private-token','CODEX-403'),
+ ('401 Unauthorized private-token','CODEX-AUTH'),
+ ('invalid peer certificate: UnknownIssuer private-token','CODEX-TLS'),
+ ('request timed out private-token','CODEX-TIMEOUT'),
+ ('DNS error private-token','CODEX-DNS'),
+ ('<html>private-token</html>','CODEX-HTML'),
+ ('unexpected private-token','CODEX-CLI'),
+])
+def test_connection_errors_preserve_stage_without_exposing_cli_output(setup,monkeypatch,stderr,code):
+    c,e,_,_=setup
+    original=e.run
+    def run(args,text=None,timeout=30):
+        if args[:2]==['cloud','list']:return SimpleNamespace(returncode=1,stdout='',stderr=stderr)
+        return original(args,text,timeout)
+    monkeypatch.setattr(e,'run',run)
+    result=c.post('/api/codex/check',json={}).json()
+    assert not result['ok'] and result['code']==code
+    assert '로그인 확인됨' in result['stage']
+    assert 'private-token' not in str(result) and 'private-name' not in str(result)
+
+
+def test_discovery_uses_unfiltered_task_list_and_does_not_send_feedback(setup,monkeypatch):
+    c,e,_,calls=setup
+    original=e.run
+    def run(args,text=None,timeout=30):
+        if args[:2]==['cloud','list']:
+            assert '--env' not in args and text is None
+            return SimpleNamespace(returncode=0,stdout=json.dumps({'tasks':[
+                {'environment_id':'env_real','environment_label':'personal_scheduler'},
+                {'environment_id':'env_real','environment_label':'personal_scheduler'},
+                {'environment_id':None,'title':'private task title'},
+            ]}),stderr='')
+        return original(args,text,timeout)
+    monkeypatch.setattr(e,'run',run)
+    before=e.settings()
+    result=c.post('/api/codex/environments',json={}).json()
+    assert result['ok'] and result['environments']==[{'id':'env_real','name':'personal_scheduler'}]
+    assert 'private task title' not in str(result)
+    assert e.settings()==before
+    assert not any(args[:2]==['cloud','exec'] for args,_ in calls)
+    c.post('/api/logout',json={})
+    assert c.post('/api/codex/environments',json={}).status_code==401
+    assert c.post('/api/codex/connection',json={}).status_code==401
