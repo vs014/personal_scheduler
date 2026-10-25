@@ -30,7 +30,7 @@ if not exist "%YEObaek_UV%" (
 )
 set "UV_CACHE_DIR=%LOCALAPPDATA%\Yeobaek\cache"
 set "UV_PYTHON_INSTALL_DIR=%LOCALAPPDATA%\Yeobaek\runtime\python"
-set "UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\Yeobaek\runtime\venv-0.2.6"
+set "UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\Yeobaek\runtime\venv-0.2.7"
 set "SCHEDULER_DB=%LOCALAPPDATA%\Yeobaek\data\scheduler.sqlite3"
 set "SCHEDULER_ORIGIN="
 set "PYTHONUTF8=1"

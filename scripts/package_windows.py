@@ -84,7 +84,7 @@ def build(destination: Path, light: bool = False):
     if not (ROOT / "web/dist/index.html").is_file():
         raise SystemExit("Run npm run build first")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    manifest = {"app_version": "0.2.6", "uv_version": UV_VERSION, "artifacts": {"codex": {"version":CODEX_VERSION,"url":CODEX_URL,"sha512":CODEX_SHA512}}}
+    manifest = {"app_version": "0.2.7", "uv_version": UV_VERSION, "artifacts": {"codex": {"version":CODEX_VERSION,"url":CODEX_URL,"sha512":CODEX_SHA512}}}
     manifest["distribution"] = "light" if light else "full"
     codex_tarball = None if light else codex_archive()
     bundled = {}

@@ -303,7 +303,7 @@ wheels = [
 
 [[package]]
 name = "personal-scheduler"
-version = "0.2.6"
+version = "0.2.7"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },

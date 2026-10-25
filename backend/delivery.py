@@ -52,7 +52,7 @@ def cli_failure(result):
     if any(x in text for x in ('proxy authentication','tunnel connection failed','proxy connect')):
         return ConnectionFailure('CODEX-PROXY','프록시 연결이 거부되었습니다. 사용하는 네트워크의 접근 정책을 확인해야 합니다.')
     if 'no cloud environments are available' in text or 'no environments available' in text:
-        return ConnectionFailure('CODEX-NO-ENV','로그인한 계정·작업공간에서 사용할 수 있는 클라우드 환경을 찾지 못했습니다. 현재 개발에 사용하는 계정·작업공간과 같은지 확인하세요.')
+        return ConnectionFailure('CODEX-NO-ENV','Codex 연결 도구가 조회한 환경 목록이 비어 있습니다. 웹에 환경이 있어도 이 오류가 나타날 수 있으며, 환경 자체가 없다는 뜻은 아닙니다.')
     if 'environment ' in text and 'not found' in text:
         return ConnectionFailure('CODEX-ENV-NOT-FOUND','로그인한 계정에서 입력한 환경 이름/ID를 찾지 못했습니다. 아래 환경 찾기로 실제 작업의 환경을 선택하세요.')
     if 'environment label' in text and 'ambiguous' in text:
@@ -163,10 +163,46 @@ class Delivery:
             if not self.connected():return {'ok':False,'message':'[CODEX-LOGIN] 먼저 현재 개발에 사용하는 ChatGPT 계정으로 Codex에 로그인하세요.'}
             config=Settings(**self.settings()).model_dump()
             stage='환경 접근 확인 (로그인 확인됨)'
-            self.catalog(config)
+            try:
+                self.catalog(config)
+            except ConnectionFailure as exc:
+                if exc.code != 'CODEX-NO-ENV':
+                    raise
+                return self.check_empty_catalog(exc, stage, config)
             return {'ok':True,'message':'Codex 로그인과 환경 접근을 확인했습니다. 대상 브랜치의 코드와 실제 전송은 별도 확인이 필요합니다.'}
         except Exception as exc:
             return diagnostic(exc,stage)
+
+    def check_empty_catalog(self, failure, stage, config):
+        # A successful task read must never stand in for environment access.
+        # Use one read-only request, without a filter or retries, to distinguish
+        # task-list access from environment discovery. Never return raw tasks.
+        result = diagnostic(failure, stage)
+        result['message'] = f"여백 v{self.version} · {result['message']}"
+        try:
+            tasks = self.catalog()['tasks']
+            selected = config['environment'].casefold()
+            matched = any(
+                isinstance(task, dict) and (
+                    task.get('environment_id') == config['environment'] or
+                    isinstance(task.get('environment_label'), str) and
+                    task['environment_label'].casefold() == selected
+                ) for task in tasks
+            )
+            state = 'target-found' if matched else 'tasks-found' if tasks else 'empty'
+            result['task_check'] = {'state': state, 'count': len(tasks)}
+            detail = {
+                'target-found': '최근 작업에서 입력한 환경 이름 또는 ID도 확인됐지만 환경 목록 조회와 결과가 일치하지 않습니다.',
+                'tasks-found': '최근 작업에서 입력한 환경은 확인되지 않았습니다. 최근 작업에 없다는 사실만으로 환경 부재를 판단할 수는 없습니다.',
+                'empty': '조회된 작업은 0건입니다. 작업이 없다는 사실만으로 환경 부재를 판단할 수는 없습니다.',
+            }[state]
+            result['message'] += f' 추가 진단: 작업 목록 조회 성공(최근 {len(tasks)}건). {detail} 웹에서 환경이 보인다면 개발 측에서 연결 경로를 확인해야 합니다. 환경 삭제·재생성이나 반복 로그인은 필요하지 않습니다.'
+        except Exception as exc:
+            extra = diagnostic(exc, '작업 목록 접근 확인')
+            result['task_check'] = {'state': 'failed', 'code': extra['code']}
+            result['message'] += f" 추가 진단: {extra['message']}"
+        result['message'] += ' 이 진단 문구 전체를 개발 대화에 알려주세요. 아직 전송 가능한 상태로 확인되지 않았습니다.'
+        return result
 
     def discover(self):
         stage='로그인 상태 확인'

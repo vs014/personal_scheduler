@@ -506,3 +506,25 @@ test("환경 이름 없이 로그인과 실제 작업의 환경을 확인하고 
     page.getByRole("button", { name: "Codex 연결 확인", exact: true }),
   ).toBeEnabled();
 });
+
+test("환경 조회 실패의 추가 진단을 복사하고 연결 성공으로 표시하지 않는다", async ({ page }) => {
+  const diagnosis = "여백 v0.2.7 · [CODEX-NO-ENV] 환경 접근 확인: 추가 진단: 작업 목록 조회 성공(최근 0건). 아직 전송 가능한 상태로 확인되지 않았습니다.";
+  await page.route("**/api/codex/check", route => route.fulfill({
+    json: { ok: false, code: "CODEX-NO-ENV", message: diagnosis },
+  }));
+  await page.getByRole("button", { name: "개선 기록", exact: true }).click();
+  await page.getByRole("button", { name: "Codex 연결 확인", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText(diagnosis);
+  let copied = "";
+  await page.exposeFunction("captureDiagnostic", (value: string) => { copied = value; });
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: (value: string) => (window as any).captureDiagnostic(value) },
+    });
+  });
+  await page.getByRole("button", { name: "진단 내용 복사", exact: true }).click();
+  await expect(page.getByText("진단 문구를 복사했습니다. 개발 대화에 붙여넣어 주세요.")).toBeVisible();
+  expect(copied).toBe(diagnosis);
+  await expect(page.getByRole("alert")).toHaveText(diagnosis);
+});

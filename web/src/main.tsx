@@ -819,7 +819,7 @@ function Workspace({ logout }: { logout: () => Promise<void> }) {
           )}
           <footer className="page-footer">
             <span>
-              여백 <small>v0.2.6</small>
+              여백 <small>v0.2.7</small>
             </span>
             <span>일정은 대화로 등록 · 피드백은 개선 기록으로.</span>
           </footer>
@@ -1933,7 +1933,7 @@ function ThreadDialog({
                 maxLength={80}
                 value={version}
                 onChange={(e) => setVersion(e.target.value)}
-                placeholder="예: 0.2.6"
+                placeholder="예: 0.2.7"
                 required={["확인 요청", "반영 완료"].includes(status)}
               />
             </label>
@@ -2068,7 +2068,7 @@ function Documents({ threads }: { threads: Thread[] }) {
       </div>
       <div className="doc-status">
         <span className="dot" />
-        문서 기준 v0.2.6
+        문서 기준 v0.2.7
         <span>
           현재 접수된 의견 {threads.length}개 · 확인 요청{" "}
           {threads.filter((t) => t.status === "확인 요청").length}개

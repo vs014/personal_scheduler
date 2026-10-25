@@ -149,3 +149,56 @@ def test_discovery_uses_unfiltered_task_list_and_does_not_send_feedback(setup,mo
     c.post('/api/logout',json={})
     assert c.post('/api/codex/environments',json={}).status_code==401
     assert c.post('/api/codex/connection',json={}).status_code==401
+
+
+@pytest.mark.parametrize('tasks,state',[
+    ([], 'empty'),
+    ([{'title':'PRIVATE-TITLE','environment_id':'private-other'}], 'tasks-found'),
+    ([{'environment_label':'SCHEDULER-TEST','title':'PRIVATE-TITLE'}], 'target-found'),
+    ([{'environment_id':'scheduler-test','title':'PRIVATE-TITLE'}], 'target-found'),
+])
+def test_empty_environment_catalog_runs_one_read_only_diagnostic(setup,monkeypatch,tasks,state):
+    c,e,_,_=setup
+    calls=[]
+    def run(args,text=None,timeout=30):
+        calls.append(args)
+        assert text is None
+        if args==['login','status']:
+            return SimpleNamespace(returncode=0,stdout='',stderr='Logged in using ChatGPT')
+        assert args[:2]==['cloud','list']
+        if '--env' in args:
+            return SimpleNamespace(returncode=1,stdout='',stderr='no cloud environments are available for this workspace')
+        return SimpleNamespace(returncode=0,stdout=json.dumps({'tasks':tasks}),stderr='')
+    monkeypatch.setattr(e,'run',run)
+    before=e.settings()
+    result=c.post('/api/codex/check',json={}).json()
+    assert result['ok'] is False and result['code']=='CODEX-NO-ENV'
+    assert result['task_check']=={'state':state,'count':len(tasks)}
+    assert '작업 목록 조회 성공' in result['message']
+    assert 'PRIVATE-TITLE' not in str(result) and 'private-other' not in str(result)
+    assert len(calls)==3 and '--env' in calls[1] and '--env' not in calls[2]
+    assert e.settings()==before and c.get('/api/codex/jobs').json()==[]
+
+
+@pytest.mark.parametrize('failure,code',[
+    ('403 Forbidden PRIVATE-TOKEN', 'CODEX-403'),
+    ('not-json PRIVATE-TOKEN', 'CODEX-CLI'),
+    ('timeout', 'CODEX-TIMEOUT'),
+])
+def test_secondary_diagnostic_failure_preserves_original_error(setup,monkeypatch,failure,code):
+    c,e,_,_=setup
+    original=e.run
+    calls=[]
+    def run(args,text=None,timeout=30):
+        calls.append(args)
+        if args[:2]!=['cloud','list']:return original(args,text,timeout)
+        if '--env' in args:
+            return SimpleNamespace(returncode=1,stdout='',stderr='no cloud environments are available for this workspace')
+        if failure=='timeout':raise subprocess.TimeoutExpired('PRIVATE-TOKEN',timeout)
+        return SimpleNamespace(returncode=1,stdout='',stderr=failure)
+    monkeypatch.setattr(e,'run',run)
+    result=c.post('/api/codex/check',json={}).json()
+    assert result['ok'] is False and result['code']=='CODEX-NO-ENV'
+    assert result['task_check']=={'state':'failed','code':code}
+    assert 'PRIVATE-TOKEN' not in str(result)
+    assert len(calls)==3

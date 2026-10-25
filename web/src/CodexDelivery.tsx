@@ -225,9 +225,24 @@ export default function CodexDelivery({ selected }: { selected: string[] }) {
         <p className="small muted">변경한 연결 설정을 먼저 저장하세요.</p>
       )}
       {!preview && error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
+        <div>
+          <p className="error" role="alert">
+            {error}
+          </p>
+          <button
+            className="secondary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(error);
+                setMessage("진단 문구를 복사했습니다. 개발 대화에 붙여넣어 주세요.");
+              } catch {
+                setMessage("복사하지 못했습니다. 위 오류 문구를 직접 선택해 복사해 주세요.");
+              }
+            }}
+          >
+            진단 내용 복사
+          </button>
+        </div>
       )}
       {!preview && message && <p role="status">{message}</p>}
       <dialog

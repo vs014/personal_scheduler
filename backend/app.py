@@ -20,7 +20,7 @@ from .models import CreateItem, ExportSelection, Feedback, FeedbackUpdate, Messa
 from .storage import Store, item_dict, new_id, password_hash, token_hash
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "0.2.6"
+VERSION = "0.2.7"
 
 
 def now():

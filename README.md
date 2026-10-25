@@ -152,3 +152,5 @@ npm run test:e2e
 Windows Light 배포본은 초기 다운로드를 약 18MB로 줄이고 첫 실행에 검증된 공식 Codex 구성 요소를 내려받습니다. 제작: `python3 scripts/package_windows.py /path/to/Yeobaek-Windows-v0.2.5-Light.zip --light`.
 
 0.2.6: Codex 로그인 상태 확인을 환경 설정과 분리하고, 최근 작업에서 환경 선택 및 원인별 진단 코드를 제공합니다. 환경 이름만으로 계정 접근이 보장되지는 않습니다.
+
+0.2.7: 빈 Codex 환경 목록 오류가 발생하면 작업 목록 조회도 자동 진단합니다. 웹/CLI 환경 목록 불일치의 원인과 실제 전송 성공은 아직 확인되지 않았습니다.
