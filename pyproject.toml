@@ -1,0 +1,19 @@
+[project]
+name = "personal-scheduler"
+version = "0.2.5"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "pyjwt[crypto]>=2.10,<3",
+    "truststore>=0.10,<1",
+    "tzdata>=2025.1",
+    "uvicorn>=0.34,<1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
